@@ -15,7 +15,7 @@ A TypeScript library for Angular applications that provides shared utilities, in
 ## Installation
 
 ```bash
-npm install @intern-hub/shared-lib-client
+npm install @goat-bravos/shared-lib-client
 ```
 
 ### Peer Dependencies
