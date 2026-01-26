@@ -1,10 +1,12 @@
-# @intern-hub/my-api-shared-lib
+# @intern-hub/shared-lib-client
 
 A TypeScript library for Angular applications that provides shared utilities, interfaces, and services for making HTTP requests with a standardized API response format.
 
 ## Features
 
 - 🚀 **REST Service**: A powerful HTTP client wrapper with and without interceptors
+- 🔐 **Built-in Authentication**: Automatic token handling with configurable storage key
+- 🔄 **Auto-Retry**: Configurable retry mechanism for failed requests
 - 📦 **Type-Safe Interfaces**: Standardized API response formats with TypeScript
 - 🔢 **Enums**: Pre-defined HTTP status codes, error codes, and storage keys
 - 🎯 **Angular Integration**: Built specifically for Angular applications with dependency injection support
@@ -13,7 +15,7 @@ A TypeScript library for Angular applications that provides shared utilities, in
 ## Installation
 
 ```bash
-npm install @intern-hub/my-api-shared-lib
+npm install @intern-hub/shared-lib-client
 ```
 
 ### Peer Dependencies
@@ -24,20 +26,21 @@ This library requires the following peer dependencies:
 {
   "@angular/common": "21.0.1",
   "@angular/core": "21.1.0-rc.0",
-  "rxjs": "^7.8.2"
+  "@angular/router": "21.0.1"
 }
 ```
 
 ## Configuration
 
-### Step 1: Provide REST_CONFIG in Your Module
+### Step 1: Provide REST_CONFIG in Your Application
 
 Before using the `RestService`, you need to provide the `REST_CONFIG` injection token in your Angular application:
 
 ```typescript
 import { ApplicationConfig } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { REST_CONFIG, RestConfig } from '@intern-hub/my-api-shared-lib';
+import { provideRouter } from '@angular/router';
+import { REST_CONFIG, RestConfig } from '@intern-hub/shared-lib-client';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -45,6 +48,7 @@ export const appConfig: ApplicationConfig = {
       // Add your interceptors here if needed
       withInterceptors([yourInterceptor])
     ),
+    provideRouter(routes),
     {
       provide: REST_CONFIG,
       useValue: {
@@ -52,7 +56,9 @@ export const appConfig: ApplicationConfig = {
         enableLogging: true,
         internalAutoRetry: true,
         retryAttempts: 3,
-        retryIntervalMs: 1000
+        retryIntervalMs: 1000,
+        loginPath: '/login',
+        tokenKey: 'accessToken'
       } as RestConfig
     }
   ]
@@ -64,10 +70,11 @@ Or in a traditional NgModule:
 ```typescript
 import { NgModule } from '@angular/core';
 import { HttpClientModule } from '@angular/common/http';
-import { REST_CONFIG, RestConfig } from '@intern-hub/my-api-shared-lib';
+import { RouterModule } from '@angular/router';
+import { REST_CONFIG, RestConfig } from '@intern-hub/shared-lib-client';
 
 @NgModule({
-  imports: [HttpClientModule],
+  imports: [HttpClientModule, RouterModule],
   providers: [
     {
       provide: REST_CONFIG,
@@ -76,7 +83,9 @@ import { REST_CONFIG, RestConfig } from '@intern-hub/my-api-shared-lib';
         enableLogging: true,
         internalAutoRetry: true,
         retryAttempts: 3,
-        retryIntervalMs: 1000
+        retryIntervalMs: 1000,
+        loginPath: '/login',
+        tokenKey: 'accessToken'
       } as RestConfig
     }
   ]
@@ -89,10 +98,12 @@ export class AppModule { }
 ```typescript
 interface RestConfig {
   apiBaseUrl: string;         // Base URL for internal API calls
-  enableLogging: boolean;     // Enable/disable logging
+  enableLogging: boolean;     // Enable/disable error logging
   internalAutoRetry: boolean; // Enable auto-retry for internal calls
   retryAttempts: number;      // Number of retry attempts
   retryIntervalMs: number;    // Interval between retries in milliseconds
+  loginPath: string;          // Path to redirect when no auth token found
+  tokenKey: string;           // LocalStorage key for the authentication token
 }
 ```
 
@@ -102,14 +113,14 @@ interface RestConfig {
 
 The `RestService` provides two sets of HTTP methods:
 
-1. **External Methods** (`get`, `post`, `put`, `patch`, `delete`): Make requests without Angular interceptors
-2. **Internal Methods** (`getInternal`, `postInternal`, `putInternal`, `patchInternal`, `deleteInternal`): Make requests with Angular interceptors and automatically prepend the `apiBaseUrl`
+1. **External Methods** (`get`, `post`, `put`, `patch`, `delete`): Make requests without Angular interceptors - useful for third-party APIs
+2. **Internal Methods** (`getInternal`, `postInternal`, `putInternal`, `patchInternal`, `deleteInternal`): Make requests with Angular interceptors, automatically prepend the `apiBaseUrl`, and support automatic authentication
 
 #### Example: External API Calls (Without Interceptors)
 
 ```typescript
 import { Component, inject } from '@angular/core';
-import { RestService, ResponseApi } from '@intern-hub/my-api-shared-lib';
+import { RestService, ResponseApi } from '@intern-hub/shared-lib-client';
 
 interface User {
   id: number;
@@ -151,7 +162,7 @@ export class UserComponent {
 
 ```typescript
 import { Component, inject } from '@angular/core';
-import { RestService, ResponseApi, SuccessResponse } from '@intern-hub/my-api-shared-lib';
+import { RestService, ResponseApi, SuccessResponse } from '@intern-hub/shared-lib-client';
 
 interface Product {
   id: number;
@@ -169,7 +180,8 @@ export class ProductComponent {
   // If apiBaseUrl is 'https://api.example.com'
   // This will call: https://api.example.com/api/products
   loadProducts() {
-    this.restService.getInternal<ResponseApi<Product[]>>('/api/products')
+    // Second parameter `credentials: false` - no auth token required
+    this.restService.getInternal<ResponseApi<Product[]>>('/api/products', false)
       .subscribe({
         next: (response) => {
           if (response.data) {
@@ -180,12 +192,28 @@ export class ProductComponent {
       });
   }
 
+  // With authentication - automatically adds Bearer token from localStorage
+  loadMyProducts() {
+    // Second parameter `credentials: true` - auth token will be added
+    this.restService.getInternal<ResponseApi<Product[]>>('/api/my-products', true)
+      .subscribe({
+        next: (response) => {
+          if (response.data) {
+            console.log('My Products:', response.data);
+          }
+        },
+        error: (err) => console.error('Error:', err)
+      });
+  }
+
   createProduct() {
     const newProduct = { name: 'Laptop', price: 999.99 };
     
+    // POST with authentication
     this.restService.postInternal<ResponseApi<Product>>(
       '/api/products',
-      newProduct
+      newProduct,
+      true  // credentials: true
     ).subscribe({
       next: (response) => console.log('Created:', response.data),
       error: (err) => console.error('Error:', err)
@@ -197,7 +225,8 @@ export class ProductComponent {
     
     this.restService.patchInternal<ResponseApi<Product>>(
       `/api/products/${id}`,
-      updates
+      updates,
+      true  // credentials: true
     ).subscribe({
       next: (response) => console.log('Updated:', response.data),
       error: (err) => console.error('Error:', err)
@@ -206,7 +235,8 @@ export class ProductComponent {
 
   deleteProduct(id: number) {
     this.restService.deleteInternal<ResponseApi<void>>(
-      `/api/products/${id}`
+      `/api/products/${id}`,
+      true  // credentials: true
     ).subscribe({
       next: () => console.log('Deleted successfully'),
       error: (err) => console.error('Error:', err)
@@ -218,16 +248,18 @@ export class ProductComponent {
 #### Example: With Custom Headers and Query Params
 
 ```typescript
-loadUserWithAuth() {
-  const params = { include: 'profile', fields: ['name', 'email'] };
-  const headers = { 'Authorization': 'Bearer YOUR_TOKEN' };
+loadProductsWithParams() {
+  const params = { category: 'electronics', sort: 'price' };
+  const headers = { 'X-Custom-Header': 'custom-value' };
 
-  this.restService.getInternal<ResponseApi<User>>(
-    '/api/users/me',
-    params,
-    headers
+  // getInternal(path, credentials, params, headers)
+  this.restService.getInternal<ResponseApi<Product[]>>(
+    '/api/products',
+    true,     // credentials
+    params,   // query params
+    headers   // custom headers
   ).subscribe({
-    next: (response) => console.log('User:', response.data),
+    next: (response) => console.log('Products:', response.data),
     error: (err) => console.error('Error:', err)
   });
 }
@@ -244,8 +276,9 @@ import {
   ErrorResponse,
   ApiStatus,
   ApiMetadata,
-  PaginatedResponse 
-} from '@intern-hub/my-api-shared-lib';
+  PaginatedResponse,
+  PaginatedData
+} from '@intern-hub/shared-lib-client';
 
 // Generic response structure
 const response: ResponseApi<User> = {
@@ -297,7 +330,7 @@ const paginated: PaginatedResponse<User> = {
 #### HTTP Client Headers
 
 ```typescript
-import { HttpClientHeaders } from '@intern-hub/my-api-shared-lib';
+import { HttpClientHeaders } from '@intern-hub/shared-lib-client';
 
 const headers: HttpClientHeaders = {
   'Content-Type': 'application/json',
@@ -311,7 +344,7 @@ const headers: HttpClientHeaders = {
 #### HTTP Status Codes
 
 ```typescript
-import { HttpStatus } from '@intern-hub/my-api-shared-lib';
+import { HttpStatus } from '@intern-hub/shared-lib-client';
 
 if (response.status === HttpStatus.OK) {
   console.log('Success!');
@@ -333,10 +366,10 @@ if (response.status === HttpStatus.OK) {
 #### Error Codes
 
 ```typescript
-import { ErrorCode } from '@intern-hub/my-api-shared-lib';
+import { ErrorCode } from '@intern-hub/shared-lib-client';
 
 if (error.status?.code === ErrorCode.UNAUTHORIZED) {
-  // Redirect to login
+  // Handle unauthorized
 }
 
 // Available error codes:
@@ -353,7 +386,7 @@ if (error.status?.code === ErrorCode.UNAUTHORIZED) {
 #### Storage Keys
 
 ```typescript
-import { StorageKey } from '@intern-hub/my-api-shared-lib';
+import { StorageKey } from '@intern-hub/shared-lib-client';
 
 localStorage.setItem(StorageKey.ACCESS_TOKEN, 'token123');
 const token = localStorage.getItem(StorageKey.ACCESS_TOKEN);
@@ -371,10 +404,8 @@ import { Observable, map, catchError, throwError } from 'rxjs';
 import { 
   RestService, 
   ResponseApi, 
-  ErrorResponse,
-  HttpStatus,
   ErrorCode 
-} from '@intern-hub/my-api-shared-lib';
+} from '@intern-hub/shared-lib-client';
 
 interface User {
   id: number;
@@ -387,16 +418,18 @@ interface User {
 export class UserService {
   private restService = inject(RestService);
 
+  // Public endpoint - no authentication needed
   getUsers(): Observable<User[]> {
-    return this.restService.getInternal<ResponseApi<User[]>>('/api/users')
+    return this.restService.getInternal<ResponseApi<User[]>>('/api/users', false)
       .pipe(
         map(response => response.data || []),
         catchError(this.handleError)
       );
   }
 
-  getUser(id: number): Observable<User> {
-    return this.restService.getInternal<ResponseApi<User>>(`/api/users/${id}`)
+  // Protected endpoint - requires authentication
+  getCurrentUser(): Observable<User> {
+    return this.restService.getInternal<ResponseApi<User>>('/api/users/me', true)
       .pipe(
         map(response => {
           if (!response.data) {
@@ -411,7 +444,8 @@ export class UserService {
   createUser(user: Omit<User, 'id'>): Observable<User> {
     return this.restService.postInternal<ResponseApi<User>>(
       '/api/users',
-      user
+      user,
+      true  // requires auth
     ).pipe(
       map(response => {
         if (!response.data) {
@@ -426,7 +460,8 @@ export class UserService {
   updateUser(id: number, updates: Partial<User>): Observable<User> {
     return this.restService.patchInternal<ResponseApi<User>>(
       `/api/users/${id}`,
-      updates
+      updates,
+      true  // requires auth
     ).pipe(
       map(response => {
         if (!response.data) {
@@ -440,7 +475,8 @@ export class UserService {
 
   deleteUser(id: number): Observable<void> {
     return this.restService.deleteInternal<ResponseApi<void>>(
-      `/api/users/${id}`
+      `/api/users/${id}`,
+      true  // requires auth
     ).pipe(
       map(() => undefined),
       catchError(this.handleError)
@@ -450,9 +486,8 @@ export class UserService {
   private handleError(error: any): Observable<never> {
     console.error('API Error:', error);
     
-    // You can handle specific error codes here
     if (error.status?.code === ErrorCode.UNAUTHORIZED) {
-      // Redirect to login or refresh token
+      // User will be automatically redirected to loginPath
     }
     
     return throwError(() => error);
@@ -466,19 +501,28 @@ export class UserService {
 
 #### External Methods (Without Interceptors)
 
-- `get<T>(path: string, params?: object, headers?: object): Observable<T>`
-- `post<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `put<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `patch<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `delete<T>(path: string, params?: object, headers?: object): Observable<T>`
+| Method | Signature |
+|--------|-----------|
+| `get` | `get<T>(path: string, params?: object, headers?: object): Observable<T>` |
+| `post` | `post<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>` |
+| `put` | `put<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>` |
+| `patch` | `patch<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>` |
+| `delete` | `delete<T>(path: string, params?: object, headers?: object): Observable<T>` |
 
 #### Internal Methods (With Interceptors)
 
-- `getInternal<T>(path: string, params?: object, headers?: object): Observable<T>`
-- `postInternal<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `putInternal<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `patchInternal<T>(path: string, body: unknown, params?: object, headers?: object): Observable<T>`
-- `deleteInternal<T>(path: string, params?: object, headers?: object): Observable<T>`
+| Method | Signature |
+|--------|-----------|
+| `getInternal` | `getInternal<T>(path: string, credentials?: boolean, params?: object, headers?: object): Observable<T>` |
+| `postInternal` | `postInternal<T>(path: string, body: unknown, credentials?: boolean, params?: object, headers?: object): Observable<T>` |
+| `putInternal` | `putInternal<T>(path: string, body: unknown, credentials?: boolean, params?: object, headers?: object): Observable<T>` |
+| `patchInternal` | `patchInternal<T>(path: string, body: unknown, credentials?: boolean, params?: object, headers?: object): Observable<T>` |
+| `deleteInternal` | `deleteInternal<T>(path: string, credentials?: boolean, params?: object, headers?: object): Observable<T>` |
+
+**Note:** When `credentials` is `true`, the service automatically:
+1. Retrieves the token from `localStorage` using the configured `tokenKey`
+2. Adds an `Authorization: Bearer <token>` header to the request
+3. Redirects to `loginPath` if no token is found
 
 ## Development
 
