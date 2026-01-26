@@ -8,8 +8,8 @@ export * from './interfaces/http-heades.interface';
 export * from './interfaces/pagination.interface';
 
 // Export Service
-export * from './services/header.service'
-export * from './services/api.service'
+export * from './services/rest/rest.config'
+export * from './services/rest/rest.service'
 
 // Export ENUM
 export * from './enums/http-status.enum';
