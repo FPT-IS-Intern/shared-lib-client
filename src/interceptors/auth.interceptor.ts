@@ -29,6 +29,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const isExcludedRequest =
     req.url.includes("/login") ||
+    req.url.includes("/hrm/users/register") ||
     req.url.includes("/password-reset") ||
     req.url.includes("/refresh");
 
