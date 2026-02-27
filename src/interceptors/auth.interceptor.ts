@@ -26,8 +26,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const token = StorageUtil.getAccessToken();
   let authReq = req;
 
+  const isExcludedRequest =
+    req.url.includes("/login") ||
+    req.url.includes("/password-reset") ||
+    req.url.includes("/refresh");
+
   // 2. Add Authorization header if token exists
-  if (token) {
+  if (token && !isExcludedRequest) {
     authReq = req.clone({
       setHeaders: {
         Authorization: `Bearer ${token}`,
@@ -47,11 +52,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         error.status === 401 || errorCode === ErrorCode.REFRESH_TOKEN_INVALID;
 
       // Handle Auth error if not on login or refresh endpoints
-      if (
-        isAuthError &&
-        !authReq.url.includes("/auth/login") &&
-        !authReq.url.includes("/auth/refresh")
-      ) {
+      if (isAuthError && !isExcludedRequest) {
         return handle401Error(authReq, next);
       }
       return throwError(() => error);
