@@ -3,11 +3,14 @@ import {
   HttpHandlerFn,
   HttpRequest,
   HttpErrorResponse,
+  HttpInterceptorFn,
 } from "@angular/common/http";
 import { Observable, throwError, BehaviorSubject } from "rxjs";
 import { catchError, filter, take, switchMap, finalize } from "rxjs/operators";
 
 import { StorageUtil } from "../utils/storage.util";
+import { ErrorCode } from "../enums/error-code.enum";
+import { ResponseApi } from "../interfaces/api-response.interface";
 
 // Flag and Subject to manage token refreshing state globally
 let isRefreshing = false;
@@ -18,10 +21,7 @@ const refreshTokenSubject = new BehaviorSubject<string | null>(null);
  * - Injects Authorization header
  * - Handles 401 errors with synchronized token refresh
  */
-export function authInterceptor(
-  req: HttpRequest<unknown>,
-  next: HttpHandlerFn,
-): Observable<HttpEvent<unknown>> {
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // 1. Get token from StorageUtil
   const token = StorageUtil.getAccessToken();
   let authReq = req;
@@ -38,14 +38,26 @@ export function authInterceptor(
   // 3. Process the request
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
-      // Handle 401 Unauthorized
-      if (error.status === 401 && !authReq.url.includes("/auth/login")) {
+      const responseBody = error.error as ResponseApi;
+      const errorCode = responseBody?.status?.code;
+
+      // Check if it's an Authentication error
+      // 401 is standard, but the backend also uses REFRESH_TOKEN_INVALID in some contexts
+      const isAuthError =
+        error.status === 401 || errorCode === ErrorCode.REFRESH_TOKEN_INVALID;
+
+      // Handle Auth error if not on login or refresh endpoints
+      if (
+        isAuthError &&
+        !authReq.url.includes("/auth/login") &&
+        !authReq.url.includes("/auth/refresh")
+      ) {
         return handle401Error(authReq, next);
       }
       return throwError(() => error);
     }),
   );
-}
+};
 
 /**
  * Handle 401 errors by attempting to refresh the token
