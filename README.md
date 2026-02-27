@@ -1,26 +1,26 @@
 # @goat-bravos/shared-lib-client
 
-A specialized TypeScript library for InternHub micro-frontend applications. This library provides shared utilities, global state management (Signals), authentication interceptors, and standardized API interfaces.
+Thư viện TypeScript dùng chung cho hệ sinh thái micro-frontend của InternHub. Thư viện cung cấp utility tái sử dụng, global state bằng Signals, auth interceptor và các interface API chuẩn hóa.
 
-## 🚀 Features
+## 🚀 Tính năng
 
-- 🚦 **Global Store**: Shared application state (User, Theme, Loading, Language) using Angular Signals.
-- 🔐 **Auth Interceptor**: Automatic JWT token injection and smart token refresh mechanism.
-- 🌍 **I18n Support**: Standardized language management with persistent storage.
-- 📦 **Type-Safe API**: Consistent `ResponseApi<T>` interfaces and HTTP enums.
-- 💾 **Storage Utils**: Type-safe wrapper for `localStorage`.
+- 🚦 **Global Store**: Quản lý state dùng chung (User, Theme, Loading, Language) bằng Angular Signals.
+- 🔐 **Auth Interceptor**: Tự gắn JWT vào header và đồng bộ luồng refresh token qua event.
+- 🌍 **I18n Support**: Quản lý ngôn ngữ thống nhất và lưu bền vững trong localStorage.
+- 📦 **Type-Safe API**: Chuẩn hóa `ResponseApi<T>` và các enum HTTP.
+- 💾 **Storage Utils**: Wrapper an toàn kiểu dữ liệu cho `localStorage`.
 
 ---
 
-## 📦 Installation
+## 📦 Cài đặt
 
 ```bash
 npm install @goat-bravos/shared-lib-client
 ```
 
-### Peer Dependencies
+### Dependency đồng cấp
 
-Ensure you have the following dependencies installed in your project:
+Đảm bảo project đang có các dependency sau:
 
 - `@angular/core` (>= 18.0.0)
 - `@angular/common` (>= 18.0.0)
@@ -28,11 +28,11 @@ Ensure you have the following dependencies installed in your project:
 
 ---
 
-## 🛠 Usage Guide
+## 🛠 Hướng dẫn sử dụng
 
-### 1. Global Store (Manager State)
+### 1. Global Store (Quản lý state)
 
-The `GlobalStoreService` uses **Angular Signals** to provide a reactive state that can be shared across multiple micro-frontends.
+`GlobalStoreService` dùng **Angular Signals** để cung cấp state phản ứng có thể chia sẻ giữa nhiều micro-frontend.
 
 ```typescript
 import { inject } from "@angular/core";
@@ -41,11 +41,11 @@ import { GlobalStoreService, Language } from "@goat-bravos/shared-lib-client";
 export class AppSidebarComponent {
   private globalStore = inject(GlobalStoreService);
 
-  // Read state
+  // Đọc state
   user = this.globalStore.user;
   language = this.globalStore.language;
 
-  // Update state
+  // Cập nhật state
   changeLanguage(lang: Language) {
     this.globalStore.setLanguage(lang);
   }
@@ -56,30 +56,30 @@ export class AppSidebarComponent {
 }
 ```
 
-### 2. Internationalization (i18n)
+### 2. Quốc tế hóa (i18n)
 
-Management of language state is built into the `GlobalStoreService`.
+Việc quản lý ngôn ngữ được tích hợp sẵn trong `GlobalStoreService`.
 
-- **Enums**: Use the `Language` enum (`VI`, `EN`).
-- **Initial State**: Automatically loads from `localStorage` on initialization.
-- **Syncing**: Calling `setLanguage()` updates both the signal and `localStorage`.
+- **Enum**: Dùng `Language` (`VI`, `EN`).
+- **Khởi tạo**: Tự đọc từ `localStorage` khi service khởi tạo.
+- **Đồng bộ**: Gọi `setLanguage()` sẽ cập nhật cả signal lẫn `localStorage`.
 
-**Usage with Ng-Zorro or other libraries:**
+**Ví dụ với Ng-Zorro hoặc thư viện khác:**
 
 ```typescript
 import { GlobalStoreService, Language } from "@goat-bravos/shared-lib-client";
 import { en_US, vi_VN, NzI18nService } from "ng-zorro-antd/i18n";
 
-// In your AppComponent or localized component
+// Trong AppComponent hoặc component có xử lý i18n
 effect(() => {
   const currentLang = this.globalStore.language();
   this.i18n.setLocale(currentLang === Language.VI ? vi_VN : en_US);
 });
 ```
 
-### 3. Authentication Interceptor
+### 3. Bộ chặn xác thực (Authentication Interceptor)
 
-Standardize your API calls by providing the `authInterceptor` in your `app.config.ts`.
+Chuẩn hóa các API call bằng cách đăng ký `authInterceptor` trong `app.config.ts`.
 
 ```typescript
 import { provideHttpClient, withInterceptors } from "@angular/common/http";
@@ -90,25 +90,36 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-_The interceptor automatically handles 401 Unauthorized errors by dispatching a `AUTH_TOKEN_EXPIRED` event and waiting for a refresh._
+Interceptor này không tự gọi API refresh token. Khi gặp `401 Unauthorized`, nó sẽ phát event `AUTH_TOKEN_EXPIRED` để Shell/Auth MFE xử lý refresh token, sau đó chờ access token mới được đẩy lại qua `notifyTokenRefreshed(...)`.
 
-### 4. Storage Utilities
+Ví dụ ở Shell/Auth MFE:
 
-Access local storage safely using `StorageUtil`.
+```typescript
+import { notifyTokenRefreshed } from "@goat-bravos/shared-lib-client";
+
+window.addEventListener("AUTH_TOKEN_EXPIRED", async () => {
+  const newAccessToken = await refreshTokenFromApi();
+  notifyTokenRefreshed(newAccessToken);
+});
+```
+
+### 4. Tiện ích Storage
+
+Truy cập `localStorage` an toàn thông qua `StorageUtil`.
 
 ```typescript
 import { StorageUtil, Language } from "@goat-bravos/shared-lib-client";
 
-// Get tokens
+// Lấy token
 const token = StorageUtil.getAccessToken();
 
-// Set language
+// Cập nhật ngôn ngữ
 StorageUtil.setLanguage(Language.VI);
 ```
 
-### 5. API Response Formatting
+### 5. Chuẩn hóa phản hồi API
 
-Ensure consistency across all backend responses.
+Giữ format phản hồi thống nhất giữa các backend service.
 
 ```typescript
 import { ResponseApi, SuccessResponse } from '@goat-bravos/shared-lib-client';
@@ -118,7 +129,7 @@ interface UserData {
   name: string;
 }
 
-// In your service
+// Trong service
 getProfile(): Observable<ResponseApi<UserData>> {
   return this.http.get<ResponseApi<UserData>>('/api/profile');
 }
@@ -126,20 +137,20 @@ getProfile(): Observable<ResponseApi<UserData>> {
 
 ---
 
-## 📂 Project Structure
+## 📂 Cấu trúc thư mục
 
 ```text
 src/
-├── enums/            # Http status codes, error codes, storage keys, language
-├── interceptors/     # Shared Auth & Error interceptors
-├── interfaces/       # Standardized API response & pagination models
-├── store/            # Global Signals Store (Singleton)
-├── utils/            # Storage & helper utilities
-└── index.ts          # Public API exports
+├── enums/            # Các enum mã HTTP, mã lỗi, khóa localStorage, ngôn ngữ
+├── interceptors/     # Các interceptor dùng chung cho auth và lỗi
+├── interfaces/       # Các interface chuẩn hóa cho response API và phân trang
+├── store/            # Global store dùng Angular Signals (singleton)
+├── utils/            # Các utility cho storage và helper
+└── index.ts          # Điểm export public của thư viện
 ```
 
 ---
 
-## 🛡️ License
+## 🛡️ Giấy phép
 
 MIT

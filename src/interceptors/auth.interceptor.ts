@@ -12,17 +12,18 @@ import { StorageUtil } from "../utils/storage.util";
 import { ErrorCode } from "../enums/error-code.enum";
 import { ResponseApi } from "../interfaces/api-response.interface";
 
-// Flag and Subject to manage token refreshing state globally
+// Cờ và subject dùng để đồng bộ các request khi access token hết hạn.
 let isRefreshing = false;
 const refreshTokenSubject = new BehaviorSubject<string | null>(null);
 
 /**
- * Shared Auth Interceptor
- * - Injects Authorization header
- * - Handles 401 errors with synchronized token refresh
+ * Auth interceptor dùng chung cho các micro-frontend.
+ * - Tự gắn header Authorization nếu có access token
+ * - Khi gặp lỗi 401 thì phát event để Shell/Auth xử lý refresh token
+ * - Các request đang chờ sẽ được đồng bộ qua `notifyTokenRefreshed`
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  // 1. Get token from StorageUtil
+  // 1. Lấy access token từ localStorage
   const token = StorageUtil.getAccessToken();
   let authReq = req;
 
@@ -31,7 +32,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     req.url.includes("/password-reset") ||
     req.url.includes("/refresh");
 
-  // 2. Add Authorization header if token exists
+  // 2. Gắn Authorization header nếu request không nằm trong nhóm loại trừ
   if (token && !isExcludedRequest) {
     authReq = req.clone({
       setHeaders: {
@@ -40,18 +41,17 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     });
   }
 
-  // 3. Process the request
+  // 3. Thực thi request và xử lý lỗi xác thực nếu có
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
       const responseBody = error.error as ResponseApi;
       const errorCode = responseBody?.status?.code;
 
-      // Check if it's an Authentication error
-      // 401 is standard, but the backend also uses REFRESH_TOKEN_INVALID in some contexts
+      // 401 là trường hợp chuẩn; ngoài ra backend có thể trả mã REFRESH_TOKEN_INVALID.
       const isAuthError =
         error.status === 401 || errorCode === ErrorCode.REFRESH_TOKEN_INVALID;
 
-      // Handle Auth error if not on login or refresh endpoints
+      // Chỉ xử lý refresh cho các request nghiệp vụ, không áp dụng cho login/refresh.
       if (isAuthError && !isExcludedRequest) {
         return handle401Error(authReq, next);
       }
@@ -61,7 +61,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 };
 
 /**
- * Handle 401 errors by attempting to refresh the token
+ * Khi access token hết hạn, thư viện không tự gọi API refresh.
+ * Thay vào đó nó phát event `AUTH_TOKEN_EXPIRED` để Shell/Auth MFE chủ động refresh,
+ * sau đó đợi token mới được đẩy ngược lại qua `notifyTokenRefreshed`.
  */
 function handle401Error(
   request: HttpRequest<unknown>,
@@ -71,16 +73,10 @@ function handle401Error(
     isRefreshing = true;
     refreshTokenSubject.next(null);
 
-    const refreshToken = StorageUtil.getRefreshToken();
-
-    // Here we assume the Shell/App environment has a way to call refresh token
-    // For a library, we might need to pass a callback or use a known endpoint
-    // Let's assume a standard endpoint or dispatch a CustomEvent for the Shell to handle
-
-    // Dispatch event so the Shell/Auth MFE can perform the actual API call
+    // Phát tín hiệu để Shell/Auth MFE thực hiện API refresh token thật sự.
     window.dispatchEvent(new CustomEvent("AUTH_TOKEN_EXPIRED"));
 
-    // We wait for the new token to be emitted through the subject
+    // Đợi access token mới, sau đó phát lại request cũ.
     return refreshTokenSubject.pipe(
       filter((token): token is string => token !== null),
       take(1),
@@ -96,7 +92,7 @@ function handle401Error(
       }),
     );
   } else {
-    // Other requests wait in queue
+    // Các request đến sau sẽ chờ cùng một đợt refresh đang diễn ra.
     return refreshTokenSubject.pipe(
       filter((token): token is string => token !== null),
       take(1),
@@ -112,7 +108,8 @@ function handle401Error(
 }
 
 /**
- * Utility to be called by the Shell/Auth MFE when a new token is received
+ * Được Shell/Auth MFE gọi sau khi refresh token thành công
+ * để đánh thức các request đang chờ.
  */
 export function notifyTokenRefreshed(newToken: string): void {
   refreshTokenSubject.next(newToken);
