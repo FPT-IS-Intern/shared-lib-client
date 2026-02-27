@@ -27,7 +27,7 @@
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
-    "publish:lib": "npm run build && cd dist && npm publish"
+    "publish:lib": "npm --cache .npm-cache publish"
   },
   "keywords": [
     "typescript",
