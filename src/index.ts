@@ -2,6 +2,7 @@
 export * from "./enums/error-code.enum";
 export * from "./enums/http-status.enum";
 export * from "./enums/localstorage-key.enum";
+export * from "./enums/language.enum";
 
 // Export các interface (HttpClientHeaders, ApiResponse, Pagination)
 export * from "./interfaces/api-response.interface";

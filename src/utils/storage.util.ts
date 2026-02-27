@@ -1,8 +1,8 @@
+import { StorageKey } from "../enums/localstorage-key.enum";
+import { Language } from "../enums/language.enum";
+
 export class StorageUtil {
   private static readonly DEVICE_ID_KEY = "X-Device-ID";
-  private static readonly ACCESS_TOKEN_KEY = "accessToken";
-  private static readonly REFRESH_TOKEN_KEY = "refreshToken";
-  private static readonly USER_ID_KEY = "userId";
 
   // Device ID
   static getDeviceId(): string | null {
@@ -15,55 +15,65 @@ export class StorageUtil {
 
   // Access Token
   static getAccessToken(): string | null {
-    return localStorage.getItem(this.ACCESS_TOKEN_KEY);
+    return localStorage.getItem(StorageKey.ACCESS_TOKEN);
   }
 
   static setAccessToken(token: string): void {
-    localStorage.setItem(this.ACCESS_TOKEN_KEY, token);
+    localStorage.setItem(StorageKey.ACCESS_TOKEN, token);
   }
 
   static removeAccessToken(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
+    localStorage.removeItem(StorageKey.ACCESS_TOKEN);
   }
 
   // Refresh Token
   static getRefreshToken(): string | null {
-    return localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    return localStorage.getItem(StorageKey.REFRESH_TOKEN);
   }
 
   static setRefreshToken(token: string): void {
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, token);
+    localStorage.setItem(StorageKey.REFRESH_TOKEN, token);
   }
 
   static removeRefreshToken(): void {
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    localStorage.removeItem(StorageKey.REFRESH_TOKEN);
   }
 
   // User ID
   static getUserId(): string | null {
-    return localStorage.getItem(this.USER_ID_KEY);
+    return localStorage.getItem("userId");
   }
 
   static setUserId(id: string): void {
-    localStorage.setItem(this.USER_ID_KEY, id);
+    localStorage.setItem("userId", id);
   }
 
   static removeUserId(): void {
-    localStorage.removeItem(this.USER_ID_KEY);
+    localStorage.removeItem("userId");
+  }
+
+  // Language
+  static getLanguage(): Language | null {
+    return localStorage.getItem(StorageKey.LANGUAGE) as Language | null;
+  }
+
+  static setLanguage(lang: Language): void {
+    localStorage.setItem(StorageKey.LANGUAGE, lang);
   }
 
   // Clear all Auth data
   static clearAuthData(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
-    localStorage.removeItem(this.USER_ID_KEY);
+    localStorage.removeItem(StorageKey.ACCESS_TOKEN);
+    localStorage.removeItem(StorageKey.REFRESH_TOKEN);
+    localStorage.removeItem("userId");
   }
 
-  // Clear everything including Device ID
+  // Clear everything including Device ID and Language
   static clearAll(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
-    localStorage.removeItem(this.USER_ID_KEY);
+    localStorage.removeItem(StorageKey.ACCESS_TOKEN);
+    localStorage.removeItem(StorageKey.REFRESH_TOKEN);
+    localStorage.removeItem("userId");
     localStorage.removeItem(this.DEVICE_ID_KEY);
+    localStorage.removeItem(StorageKey.LANGUAGE);
   }
 }
