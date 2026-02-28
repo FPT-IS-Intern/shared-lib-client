@@ -17,21 +17,98 @@ let isRefreshing = false;
 const refreshTokenSubject = new BehaviorSubject<string | null>(null);
 
 /**
+ * Cấu hình cho auth interceptor.
+ */
+export interface AuthInterceptorConfig {
+  /**
+   * Danh sách các path pattern sẽ KHÔNG gắn Bearer token.
+   * Mỗi phần tử là một chuỗi mà interceptor sẽ kiểm tra bằng `url.includes(pattern)`.
+   *
+   * Ví dụ: ['/login', '/password-reset', '/public/products']
+   */
+  excludedPaths?: string[];
+}
+
+/**
+ * Danh sách path mặc định sẽ không gắn Bearer token.
+ */
+const DEFAULT_EXCLUDED_PATHS: string[] = [
+  "/login",
+  "/hrm/users/register",
+  "/password-reset",
+  "/refresh",
+];
+
+/**
+ * Danh sách path đang được sử dụng (có thể được cấu hình từ bên ngoài).
+ */
+let activeExcludedPaths: string[] = [...DEFAULT_EXCLUDED_PATHS];
+
+/**
+ * Cấu hình auth interceptor từ bên ngoài (thường gọi ở Shell App).
+ *
+ * @example
+ * // Trong app.config.ts của Shell App:
+ * import { configureAuthInterceptor } from 'shared-lib-client';
+ *
+ * configureAuthInterceptor({
+ *   excludedPaths: [
+ *     '/login',
+ *     '/password-reset',
+ *     '/refresh',
+ *     '/public/products',
+ *     '/public/categories',
+ *   ],
+ * });
+ */
+export function configureAuthInterceptor(config: AuthInterceptorConfig): void {
+  if (config.excludedPaths && config.excludedPaths.length > 0) {
+    activeExcludedPaths = [...config.excludedPaths];
+  }
+}
+
+/**
+ * Thêm các path vào danh sách loại trừ mà không ghi đè danh sách mặc định.
+ *
+ * @example
+ * import { addExcludedPaths } from 'shared-lib-client';
+ *
+ * addExcludedPaths(['/public/products', '/public/categories']);
+ */
+export function addExcludedPaths(paths: string[]): void {
+  const newPaths = paths.filter((p) => !activeExcludedPaths.includes(p));
+  activeExcludedPaths = [...activeExcludedPaths, ...newPaths];
+}
+
+/**
+ * Lấy danh sách các path đang bị loại trừ (dùng cho debug/testing).
+ */
+export function getExcludedPaths(): string[] {
+  return [...activeExcludedPaths];
+}
+
+/**
+ * Kiểm tra một URL có thuộc danh sách loại trừ hay không.
+ */
+function isExcluded(url: string): boolean {
+  return activeExcludedPaths.some((pattern) => url.includes(pattern));
+}
+
+/**
  * Auth interceptor dùng chung cho các micro-frontend.
  * - Tự gắn header Authorization nếu có access token
  * - Khi gặp lỗi 401 thì phát event để Shell/Auth xử lý refresh token
  * - Các request đang chờ sẽ được đồng bộ qua `notifyTokenRefreshed`
+ *
+ * Để cấu hình danh sách path không gắn Bearer, gọi `configureAuthInterceptor()`
+ * hoặc `addExcludedPaths()` trước khi ứng dụng bắt đầu gửi request.
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // 1. Lấy access token từ localStorage
   const token = StorageUtil.getAccessToken();
   let authReq = req;
 
-  const isExcludedRequest =
-    req.url.includes("/login") ||
-    req.url.includes("/hrm/users/register") ||
-    req.url.includes("/password-reset") ||
-    req.url.includes("/refresh");
+  const isExcludedRequest = isExcluded(req.url);
 
   // 2. Gắn Authorization header nếu request không nằm trong nhóm loại trừ
   if (token && !isExcludedRequest) {
