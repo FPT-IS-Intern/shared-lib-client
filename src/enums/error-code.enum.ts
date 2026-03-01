@@ -8,4 +8,5 @@ export enum ErrorCode {
   CONFLICT = "conflict",
   SERVICE_UNAVAILABLE = "service.unavailable",
   REFRESH_TOKEN_INVALID = "auth.exception.refresh_token_invalid",
+  ACCESS_TOKEN_EXPIRED = "auth.exception.access_token_expired",
 }

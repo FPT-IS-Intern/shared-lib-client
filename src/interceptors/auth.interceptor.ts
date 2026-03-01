@@ -12,6 +12,13 @@ import { StorageUtil } from "../utils/storage.util";
 import { ErrorCode } from "../enums/error-code.enum";
 import { ResponseApi } from "../interfaces/api-response.interface";
 
+// ============================================================================
+// CONFIGURATION & STATE
+// ============================================================================
+
+// Hằng số nội bộ dùng để nhận diện tín hiệu hủy làm mới token.
+export const CANCEL_REFRESH_TOKEN = "CANCEL_REFRESH_TOKEN";
+
 // Cờ và subject dùng để đồng bộ các request khi access token hết hạn.
 let isRefreshing = false;
 const refreshTokenSubject = new BehaviorSubject<string | null>(null);
@@ -30,19 +37,13 @@ export interface AuthInterceptorConfig {
 }
 
 /**
- * Danh sách path mặc định sẽ không gắn Bearer token.
- */
-const DEFAULT_EXCLUDED_PATHS: string[] = [
-  "/login",
-  "/hrm/users/register",
-  "/password-reset",
-  "/refresh",
-];
-
-/**
  * Danh sách path đang được sử dụng (có thể được cấu hình từ bên ngoài).
  */
-let activeExcludedPaths: string[] = [...DEFAULT_EXCLUDED_PATHS];
+let activeExcludedPaths: string[] = [];
+
+// ============================================================================
+// PUBLIC API (CONFIGURATION & UTILS)
+// ============================================================================
 
 /**
  * Cấu hình auth interceptor từ bên ngoài (thường gọi ở Shell App).
@@ -69,11 +70,6 @@ export function configureAuthInterceptor(config: AuthInterceptorConfig): void {
 
 /**
  * Thêm các path vào danh sách loại trừ mà không ghi đè danh sách mặc định.
- *
- * @example
- * import { addExcludedPaths } from 'shared-lib-client';
- *
- * addExcludedPaths(['/public/products', '/public/categories']);
  */
 export function addExcludedPaths(paths: string[]): void {
   const newPaths = paths.filter((p) => !activeExcludedPaths.includes(p));
@@ -94,14 +90,15 @@ function isExcluded(url: string): boolean {
   return activeExcludedPaths.some((pattern) => url.includes(pattern));
 }
 
+// ============================================================================
+// INTERCEPTOR CORE
+// ============================================================================
+
 /**
  * Auth interceptor dùng chung cho các micro-frontend.
  * - Tự gắn header Authorization nếu có access token
  * - Khi gặp lỗi 401 thì phát event để Shell/Auth xử lý refresh token
  * - Các request đang chờ sẽ được đồng bộ qua `notifyTokenRefreshed`
- *
- * Để cấu hình danh sách path không gắn Bearer, gọi `configureAuthInterceptor()`
- * hoặc `addExcludedPaths()` trước khi ứng dụng bắt đầu gửi request.
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // 1. Lấy access token từ localStorage
@@ -125,12 +122,18 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       const responseBody = error.error as ResponseApi;
       const errorCode = responseBody?.status?.code;
 
-      // 401 là trường hợp chuẩn; ngoài ra backend có thể trả mã REFRESH_TOKEN_INVALID.
-      const isAuthError =
-        error.status === 401 || errorCode === ErrorCode.REFRESH_TOKEN_INVALID;
+      // Nếu Refresh Token đã hỏng hoặc không hợp lệ -> Báo thẳng cho Shell App/Auth để Đăng xuất ngay
+      if (errorCode === ErrorCode.REFRESH_TOKEN_INVALID) {
+        window.dispatchEvent(new CustomEvent("FORCE_LOGOUT"));
+        return throwError(() => error);
+      }
 
-      // Chỉ xử lý refresh cho các request nghiệp vụ, không áp dụng cho login/refresh.
-      if (isAuthError && !isExcludedRequest) {
+      // Token hết hạn (hoặc mã 401 chung)
+      const isAccessTokenExpired =
+        error.status === 401 || errorCode === ErrorCode.ACCESS_TOKEN_EXPIRED;
+
+      // Chỉ xử lý refresh cho các request nghiệp vụ, không áp dụng cho request login/hệ thống đã cấu hình loại trừ.
+      if (isAccessTokenExpired && !isExcludedRequest) {
         return handle401Error(authReq, next);
       }
       return throwError(() => error);
@@ -138,10 +141,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   );
 };
 
+// ============================================================================
+// TOKEN REFRESH LOGIC
+// ============================================================================
+
 /**
  * Khi access token hết hạn, thư viện không tự gọi API refresh.
- * Thay vào đó nó phát event `AUTH_TOKEN_EXPIRED` để Shell/Auth MFE chủ động refresh,
- * sau đó đợi token mới được đẩy ngược lại qua `notifyTokenRefreshed`.
+ * Thay vào đó nó phát event `AUTH_TOKEN_EXPIRED` để Shell/Auth MFE chủ động refresh.
  */
 function handle401Error(
   request: HttpRequest<unknown>,
@@ -159,6 +165,11 @@ function handle401Error(
       filter((token): token is string => token !== null),
       take(1),
       switchMap((token: string) => {
+        if (token === CANCEL_REFRESH_TOKEN) {
+          return throwError(
+            () => new Error("Refresh process was cancelled. Request dropped."),
+          );
+        }
         return next(
           request.clone({
             setHeaders: { Authorization: `Bearer ${token}` },
@@ -175,6 +186,11 @@ function handle401Error(
       filter((token): token is string => token !== null),
       take(1),
       switchMap((token: string) => {
+        if (token === CANCEL_REFRESH_TOKEN) {
+          return throwError(
+            () => new Error("Refresh process was cancelled. Request dropped."),
+          );
+        }
         return next(
           request.clone({
             setHeaders: { Authorization: `Bearer ${token}` },
@@ -191,5 +207,15 @@ function handle401Error(
  */
 export function notifyTokenRefreshed(newToken: string): void {
   refreshTokenSubject.next(newToken);
+  isRefreshing = false;
+}
+
+/**
+ * Được Shell/Auth MFE gọi khi refresh token thất bại
+ * để giải phóng toàn bộ các request đang nằm chờ trong hàng đợi
+ * tránh rò rỉ bộ nhớ (memory leak).
+ */
+export function cancelTokenRefresh(): void {
+  refreshTokenSubject.next(CANCEL_REFRESH_TOKEN);
   isRefreshing = false;
 }

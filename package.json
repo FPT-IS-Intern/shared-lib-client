@@ -1,6 +1,6 @@
 {
   "name": "@goat-bravos/shared-lib-client",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "peerDependencies": {
     "@angular/common": "21.0.1",
