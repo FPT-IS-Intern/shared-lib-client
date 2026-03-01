@@ -102,13 +102,13 @@ function isExcluded(url: string): boolean {
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // 1. Lấy access token từ localStorage
-  const token = StorageUtil.getAccessToken();
+  const token = StorageUtil.getAccessToken() || " ";
   let authReq = req;
 
   const isExcludedRequest = isExcluded(req.url);
 
   // 2. Gắn Authorization header nếu request không nằm trong nhóm loại trừ
-  if (token && !isExcludedRequest) {
+  if (!isExcludedRequest) {
     authReq = req.clone({
       setHeaders: {
         Authorization: `Bearer ${token}`,
