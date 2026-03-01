@@ -17,3 +17,7 @@ export * from "./store/global-store.service";
 
 // Export Interceptors
 export * from "./interceptors/auth.interceptor";
+
+// Export Guards
+export * from "./guards/auth.guard";
+export * from "./guards/no-auth.guard";
